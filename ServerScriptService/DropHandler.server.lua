@@ -1,4 +1,7 @@
-print("Drop Handler loaded (snap zones)")
+local Logger = require(game.ServerScriptService.Logger)
+
+Logger.info("DropHandler", "Loaded");
+
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local dropEvent = ReplicatedStorage:WaitForChild("DropHeldItem")
