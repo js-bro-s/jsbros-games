@@ -88,5 +88,46 @@ export function useSound() {
     });
   }, [getCtx]);
 
-  return { playCollect, playCountdown, playGameOver, playStart };
+  const playPowerUp = useCallback(() => {
+    const ctx = getCtx();
+    const times = [0, 0.06, 0.12, 0.18];
+    const freqs = [523, 659, 784, 1047];
+
+    times.forEach((t, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freqs[i], ctx.currentTime + t);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.12);
+
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.12);
+    });
+  }, [getCtx]);
+
+  const playMagnet = useCallback(() => {
+    const ctx = getCtx();
+    // Warbling "whooomm" — two detuned oscillators
+    for (const detune of [0, 7]) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(220 + detune, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(110 + detune, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.35);
+    }
+  }, [getCtx]);
+
+  return { playCollect, playPowerUp, playMagnet, playCountdown, playGameOver, playStart };
 }

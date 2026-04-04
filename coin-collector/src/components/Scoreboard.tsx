@@ -1,6 +1,17 @@
 import type { GameState } from "../types/game";
 import { GAME_CONFIG } from "../types/game";
 
+function levelColor(label: string): string {
+  const map: Record<string, string> = {
+    Easy: "#44ff44",
+    Medium: "#ffdd44",
+    Hard: "#ff8844",
+    Expert: "#ff4444",
+    Legendary: "#ff44ff",
+  };
+  return map[label] ?? "#ffffff";
+}
+
 interface ScoreboardProps {
   state: GameState;
   highScore: number;
@@ -31,6 +42,12 @@ export function Scoreboard({ state, highScore }: ScoreboardProps) {
             }}
           >
             {state.timeLeft}s
+          </span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.label}>LEVEL</span>
+          <span style={{ ...styles.value, color: levelColor(state.difficulty.label), fontSize: 16 }}>
+            {state.difficulty.label}
           </span>
         </div>
         <div style={styles.stat}>

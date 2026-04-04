@@ -1,32 +1,59 @@
 import { useCallback, useRef, useState } from "react";
-import type { Coin, CollectEffect, GameState, GameStatus, Particle } from "../types/game";
-import { GAME_CONFIG } from "../types/game";
+import type { ActiveBoost, Coin, CoinTier, CollectEffect, Difficulty, GameState, GameStatus, Particle, PowerUp } from "../types/game";
+import { COIN_TIERS, GAME_CONFIG, getDifficulty } from "../types/game";
 import { useGameLoop } from "./useGameLoop";
 import type { Keys } from "./useKeyboard";
 import { useKeyboard } from "./useKeyboard";
 
-let coinIdCounter = 0;
+let idCounter = 0;
 
-function createCoin(): Coin {
-  const { CANVAS_WIDTH, CANVAS_HEIGHT, COIN_RADIUS } = GAME_CONFIG;
+function pickCoinTier(): CoinTier {
+  const tiers = Object.entries(COIN_TIERS) as [CoinTier, { weight: number }][];
+  const totalWeight = tiers.reduce((sum, [, cfg]) => sum + cfg.weight, 0);
+  let roll = Math.random() * totalWeight;
+  for (const [tier, cfg] of tiers) {
+    roll -= cfg.weight;
+    if (roll <= 0) return tier;
+  }
+  return "bronze";
+}
+
+function createCoin(radius: number = GAME_CONFIG.COIN_RADIUS): Coin {
+  const { CANVAS_WIDTH, CANVAS_HEIGHT } = GAME_CONFIG;
   return {
-    id: `coin-${coinIdCounter++}`,
+    id: `coin-${idCounter++}`,
     position: {
-      x: COIN_RADIUS + Math.random() * (CANVAS_WIDTH - COIN_RADIUS * 2),
-      y: COIN_RADIUS + Math.random() * (CANVAS_HEIGHT - COIN_RADIUS * 2),
+      x: radius + Math.random() * (CANVAS_WIDTH - radius * 2),
+      y: radius + Math.random() * (CANVAS_HEIGHT - radius * 2),
     },
-    radius: COIN_RADIUS,
+    radius,
+    tier: pickCoinTier(),
     collected: false,
   };
 }
 
-function spawnCoins(count: number): Coin[] {
-  return Array.from({ length: count }, () => createCoin());
+function spawnCoins(count: number, radius?: number): Coin[] {
+  return Array.from({ length: count }, () => createCoin(radius));
 }
 
-function createCollectEffect(x: number, y: number): CollectEffect {
+function createPowerUp(): PowerUp {
+  const { CANVAS_WIDTH, CANVAS_HEIGHT, POWERUP_RADIUS } = GAME_CONFIG;
+  return {
+    id: `pu-${idCounter++}`,
+    type: Math.random() < 0.5 ? "speed" : "magnet",
+    position: {
+      x: POWERUP_RADIUS + Math.random() * (CANVAS_WIDTH - POWERUP_RADIUS * 2),
+      y: POWERUP_RADIUS + Math.random() * (CANVAS_HEIGHT - POWERUP_RADIUS * 2),
+    },
+    radius: POWERUP_RADIUS,
+    collected: false,
+    spawnedAt: Date.now(),
+  };
+}
+
+function createCollectEffect(x: number, y: number, colors?: string[]): CollectEffect {
   const particles: Particle[] = [];
-  const colors = ["#ffd700", "#ffec80", "#fff4b8", "#ffa500"];
+  const palette = colors ?? ["#ffd700", "#ffec80", "#fff4b8", "#ffa500"];
   for (let i = 0; i < 12; i++) {
     const angle = (Math.PI * 2 * i) / 12;
     const speed = 40 + Math.random() * 60;
@@ -38,7 +65,7 @@ function createCollectEffect(x: number, y: number): CollectEffect {
       life: 1,
       maxLife: 1,
       size: 2 + Math.random() * 3,
-      color: colors[Math.floor(Math.random() * colors.length)],
+      color: palette[Math.floor(Math.random() * palette.length)],
     });
   }
   return { x, y, age: 0, duration: 0.5, particles };
@@ -76,15 +103,20 @@ function checkCollision(
 function createInitialState(): GameState {
   const { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_RADIUS, PLAYER_SPEED, COIN_COUNT, GAME_DURATION } =
     GAME_CONFIG;
+  const difficulty = getDifficulty(0);
   return {
     player: {
       position: { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 },
       radius: PLAYER_RADIUS,
       speed: PLAYER_SPEED,
+      baseSpeed: PLAYER_SPEED,
       score: 0,
+      boosts: [],
     },
-    coins: spawnCoins(COIN_COUNT),
+    coins: spawnCoins(COIN_COUNT, difficulty.coinRadius),
+    powerUps: [],
     effects: [],
+    difficulty,
     timeLeft: GAME_DURATION,
     status: "idle",
   };
@@ -92,6 +124,8 @@ function createInitialState(): GameState {
 
 export interface GameCallbacks {
   onCollect?: () => void;
+  onSpeedUp?: () => void;
+  onMagnet?: () => void;
   onCountdown?: () => void;
   onGameOver?: () => void;
 }
@@ -101,6 +135,7 @@ export function useGame(callbacks?: GameCallbacks) {
   const keys = useKeyboard();
   const timerAccum = useRef(0);
   const respawnQueue = useRef<number[]>([]);
+  const nextPowerUpSpawn = useRef(Date.now() + GAME_CONFIG.POWERUP_SPAWN_INTERVAL);
   const cbRef = useRef(callbacks);
   cbRef.current = callbacks;
   const prevTimeRef = useRef(GAME_CONFIG.GAME_DURATION);
@@ -145,20 +180,100 @@ export function useGame(callbacks?: GameCallbacks) {
             )
           ) {
             coin.collected = true;
-            player.score += 1;
-            next.effects.push(createCollectEffect(coin.position.x, coin.position.y));
+            const tierCfg = COIN_TIERS[coin.tier];
+            player.score += tierCfg.points;
+            next.effects.push(
+              createCollectEffect(coin.position.x, coin.position.y, [
+                tierCfg.color,
+                tierCfg.glowColor,
+                "#ffffff",
+              ])
+            );
             cbRef.current?.onCollect?.();
-            // Queue respawn
-            respawnQueue.current.push(Date.now() + GAME_CONFIG.RESPAWN_DELAY);
+
+            // Recalculate difficulty after scoring
+            next.difficulty = getDifficulty(player.score);
+
+            // Queue respawn with current difficulty delay
+            respawnQueue.current.push(Date.now() + next.difficulty.respawnDelay);
           }
         }
 
-        // Process respawn queue
+        // Check power-up collisions
+        for (const pu of next.powerUps) {
+          if (pu.collected) continue;
+          if (
+            checkCollision(
+              player.position.x, player.position.y, player.radius,
+              pu.position.x, pu.position.y, pu.radius
+            )
+          ) {
+            pu.collected = true;
+            const puColors = pu.type === "magnet"
+              ? ["#ff44ff", "#ff88ff", "#ffaaff", "#ffffff"]
+              : ["#00ff88", "#44ffaa", "#88ffcc", "#ffffff"];
+            next.effects.push(createCollectEffect(pu.position.x, pu.position.y, puColors));
+
+            if (pu.type === "speed") {
+              cbRef.current?.onSpeedUp?.();
+              player.boosts.push({
+                type: "speed",
+                endsAt: Date.now() + GAME_CONFIG.SPEED_BOOST_DURATION,
+              });
+            } else {
+              cbRef.current?.onMagnet?.();
+              player.boosts.push({
+                type: "magnet",
+                endsAt: Date.now() + GAME_CONFIG.MAGNET_DURATION,
+              });
+            }
+          }
+        }
+
+        // Expire old boosts and recalculate speed
         const now = Date.now();
+        player.boosts = player.boosts.filter((b) => b.endsAt > now);
+        const hasSpeedBoost = player.boosts.some((b) => b.type === "speed");
+        player.speed = hasSpeedBoost
+          ? player.baseSpeed * GAME_CONFIG.SPEED_BOOST_MULTIPLIER
+          : player.baseSpeed;
+
+        // Magnet: pull nearby coins toward player
+        const hasMagnet = player.boosts.some((b) => b.type === "magnet");
+        if (hasMagnet) {
+          const { MAGNET_RANGE, MAGNET_PULL_SPEED } = GAME_CONFIG;
+          for (const coin of next.coins) {
+            if (coin.collected) continue;
+            const dx = player.position.x - coin.position.x;
+            const dy = player.position.y - coin.position.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < MAGNET_RANGE && dist > 1) {
+              const pull = (MAGNET_PULL_SPEED * dt) / dist;
+              coin.position.x += dx * pull;
+              coin.position.y += dy * pull;
+            }
+          }
+        }
+
+        // Spawn power-ups on interval
+        if (now >= nextPowerUpSpawn.current) {
+          next.powerUps.push(createPowerUp());
+          nextPowerUpSpawn.current = now + GAME_CONFIG.POWERUP_SPAWN_INTERVAL;
+        }
+
+        // Remove expired/collected power-ups
+        next.powerUps = next.powerUps.filter(
+          (pu) => !pu.collected && now - pu.spawnedAt < GAME_CONFIG.POWERUP_LIFETIME
+        );
+
+        // Process respawn queue — only spawn if under maxCoins
         const stillWaiting: number[] = [];
+        const activeCoins = next.coins.filter((c) => !c.collected).length;
         for (const time of respawnQueue.current) {
           if (now >= time) {
-            next.coins.push(createCoin());
+            if (activeCoins + stillWaiting.length < next.difficulty.maxCoins + 2) {
+              next.coins.push(createCoin(next.difficulty.coinRadius));
+            }
           } else {
             stillWaiting.push(time);
           }
@@ -199,9 +314,10 @@ export function useGame(callbacks?: GameCallbacks) {
   useGameLoop(update, state.status === "playing");
 
   const start = useCallback(() => {
-    coinIdCounter = 0;
+    idCounter = 0;
     timerAccum.current = 0;
     respawnQueue.current = [];
+    nextPowerUpSpawn.current = Date.now() + GAME_CONFIG.POWERUP_SPAWN_INTERVAL;
     setState({ ...createInitialState(), status: "playing" });
   }, []);
 
