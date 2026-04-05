@@ -5,6 +5,7 @@ export interface Keys {
   down: boolean;
   left: boolean;
   right: boolean;
+  jump: boolean;
 }
 
 export function useKeyboard() {
@@ -13,6 +14,7 @@ export function useKeyboard() {
     down: false,
     left: false,
     right: false,
+    jump: false,
   });
 
   useEffect(() => {
@@ -28,6 +30,11 @@ export function useKeyboard() {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        keys.current.jump = true;
+        return;
+      }
       const dir = keyMap[e.key];
       if (dir) {
         e.preventDefault();
@@ -36,6 +43,10 @@ export function useKeyboard() {
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        keys.current.jump = false;
+        return;
+      }
       const dir = keyMap[e.key];
       if (dir) keys.current[dir] = false;
     };

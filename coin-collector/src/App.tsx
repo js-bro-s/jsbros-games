@@ -22,8 +22,11 @@ function App() {
   const onMagnet = useCallback(() => sound.playMagnet(), [sound]);
   const onCountdown = useCallback(() => sound.playCountdown(), [sound]);
   const onGameOver = useCallback(() => sound.playGameOver(), [sound]);
+  const onJump = useCallback(() => sound.playCollect(), [sound]);
+  const onStomp = useCallback(() => sound.playPowerUp(), [sound]);
+  const onHurt = useCallback(() => sound.playCountdown(), [sound]);
 
-  const { state, start, restart } = useGame({ onCollect, onSpeedUp, onMagnet, onCountdown, onGameOver });
+  const { state, start, restart } = useGame({ onCollect, onSpeedUp, onMagnet, onCountdown, onGameOver, onJump, onStomp, onHurt });
 
   // Handle game state transitions
   useEffect(() => {
@@ -65,10 +68,12 @@ function App() {
         }
         return;
       }
-      if (e.code !== "Space") return;
-      e.preventDefault();
-      if (state.status === "idle") start();
-      if (state.status === "ended") restart();
+      // Space starts/restarts only when not playing (during play it's jump via useKeyboard)
+      if (e.code === "Space" && state.status !== "playing") {
+        e.preventDefault();
+        if (state.status === "idle") start();
+        if (state.status === "ended") restart();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -105,7 +110,7 @@ function App() {
 
       <p className="hint">
         {state.status === "playing"
-          ? "Bronze=1  Silver=3  Gold=5  |  >> Speed Boost  |  @ Coin Magnet"
+          ? "Coins: 1/3/5  |  >> Speed  @ Magnet  |  SPACE jump  |  Stomp goombas!"
           : "A JS Bros Lab game — Lesson 09"}
       </p>
 

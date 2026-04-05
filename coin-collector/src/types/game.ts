@@ -3,6 +3,7 @@ export interface Position {
   y: number;
 }
 
+// --- Coin tiers ---
 export type CoinTier = "bronze" | "silver" | "gold";
 
 export interface CoinTierConfig {
@@ -11,7 +12,7 @@ export interface CoinTierConfig {
   innerColor: string;
   label: string;
   points: number;
-  weight: number; // spawn probability weight
+  weight: number;
 }
 
 export const COIN_TIERS: Record<CoinTier, CoinTierConfig> = {
@@ -28,6 +29,7 @@ export interface Coin {
   collected: boolean;
 }
 
+// --- Power-ups ---
 export type PowerUpType = "speed" | "magnet";
 
 export interface PowerUp {
@@ -44,15 +46,45 @@ export interface ActiveBoost {
   endsAt: number;
 }
 
+// --- Platformer player ---
 export interface Player {
   position: Position;
-  radius: number;
+  vy: number;
+  width: number;
+  height: number;
   speed: number;
   baseSpeed: number;
+  jumpForce: number;
+  grounded: boolean;
+  facing: 1 | -1;
+  walkTimer: number;
   score: number;
   boosts: ActiveBoost[];
 }
 
+// --- Platforms ---
+export interface Platform {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// --- Enemies ---
+export type EnemyType = "goomba" | "spike";
+
+export interface Enemy {
+  id: string;
+  type: EnemyType;
+  position: Position;
+  width: number;
+  height: number;
+  vx: number;
+  walkTimer: number;
+  alive: boolean;
+}
+
+// --- Effects ---
 export interface Particle {
   x: number;
   y: number;
@@ -72,6 +104,18 @@ export interface CollectEffect {
   particles: Particle[];
 }
 
+// --- Score popups ---
+export interface ScorePopup {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  age: number;
+  duration: number;
+}
+
+// --- Difficulty ---
 export interface Difficulty {
   level: number;
   label: string;
@@ -82,12 +126,18 @@ export interface Difficulty {
 
 export type GameStatus = "idle" | "playing" | "ended";
 
+// --- World / camera ---
 export interface GameState {
   player: Player;
   coins: Coin[];
   powerUps: PowerUp[];
+  enemies: Enemy[];
+  platforms: Platform[];
   effects: CollectEffect[];
+  popups: ScorePopup[];
   difficulty: Difficulty;
+  cameraX: number;
+  worldWidth: number;
   timeLeft: number;
   status: GameStatus;
 }
@@ -98,35 +148,54 @@ export interface LeaderboardEntry {
   date: string;
 }
 
+// --- Config ---
 export const GAME_CONFIG = {
-  CANVAS_WIDTH: 640,
+  CANVAS_WIDTH: 800,
   CANVAS_HEIGHT: 480,
-  COIN_COUNT: 10,
+  // World
+  WORLD_WIDTH: 4000,
+  TILE_SIZE: 32,
+  GROUND_Y: 416, // ground top = CANVAS_HEIGHT - 2 tiles
+  GRAVITY: 1400,
+  // Player
+  PLAYER_WIDTH: 28,
+  PLAYER_HEIGHT: 32,
+  PLAYER_SPEED: 260,
+  JUMP_FORCE: -680,
+  // Game
+  COIN_COUNT: 20,
   COIN_RADIUS: 12,
-  PLAYER_RADIUS: 16,
-  PLAYER_SPEED: 4,
   GAME_DURATION: 60,
   RESPAWN_DELAY: 2000,
+  // Power-ups
   POWERUP_RADIUS: 14,
   POWERUP_SPAWN_INTERVAL: 8000,
   POWERUP_LIFETIME: 6000,
-  SPEED_BOOST_MULTIPLIER: 1.8,
+  SPEED_BOOST_MULTIPLIER: 1.6,
   SPEED_BOOST_DURATION: 4000,
   MAGNET_DURATION: 5000,
-  MAGNET_RANGE: 120,
-  MAGNET_PULL_SPEED: 200,
+  MAGNET_RANGE: 150,
+  MAGNET_PULL_SPEED: 300,
+  // Enemies
+  ENEMY_COUNT: 8,
+  GOOMBA_SPEED: 60,
+  GOOMBA_WIDTH: 28,
+  GOOMBA_HEIGHT: 28,
+  SPIKE_WIDTH: 32,
+  SPIKE_HEIGHT: 20,
+  STOMP_BOUNCE: -400,
+  ENEMY_HIT_PENALTY: 3,
 } as const;
 
-// Difficulty ramps every 5 coins collected
 export const DIFFICULTY_TIERS: Omit<Difficulty, "level">[] = [
-  { label: "Easy",       coinRadius: 12, respawnDelay: 2000, maxCoins: 10 },
-  { label: "Medium",     coinRadius: 10, respawnDelay: 1600, maxCoins: 8 },
-  { label: "Hard",       coinRadius: 8,  respawnDelay: 1200, maxCoins: 7 },
-  { label: "Expert",     coinRadius: 7,  respawnDelay: 900,  maxCoins: 6 },
-  { label: "Legendary",  coinRadius: 6,  respawnDelay: 600,  maxCoins: 5 },
+  { label: "Easy",       coinRadius: 12, respawnDelay: 2000, maxCoins: 20 },
+  { label: "Medium",     coinRadius: 10, respawnDelay: 1600, maxCoins: 16 },
+  { label: "Hard",       coinRadius: 8,  respawnDelay: 1200, maxCoins: 14 },
+  { label: "Expert",     coinRadius: 7,  respawnDelay: 900,  maxCoins: 12 },
+  { label: "Legendary",  coinRadius: 6,  respawnDelay: 600,  maxCoins: 10 },
 ];
 
 export function getDifficulty(score: number): Difficulty {
-  const level = Math.min(Math.floor(score / 5), DIFFICULTY_TIERS.length - 1);
+  const level = Math.min(Math.floor(score / 8), DIFFICULTY_TIERS.length - 1);
   return { level, ...DIFFICULTY_TIERS[level] };
 }
